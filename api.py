@@ -3,7 +3,7 @@ import os
 from flask import Flask, abort, request, jsonify, g, url_for
 from flask_sqlalchemy import SQLAlchemy
 from flask_httpauth import HTTPBasicAuth
-from passlib.apps import custom_app_context as pwd_context
+from werkzeug.security import generate_password_hash, check_password_hash
 from itsdangerous import (TimedJSONWebSignatureSerializer
                           as Serializer, BadSignature, SignatureExpired)
 
@@ -24,11 +24,16 @@ class User(db.Model):
     username = db.Column(db.String(32), index=True)
     password_hash = db.Column(db.String(64))
 
-    def hash_password(self, password):
-        self.password_hash = pwd_context.encrypt(password)
+    @property
+    def password(self):
+        raise AttributeError('password is not a readle attribute')
+
+    @password.setter
+    def password(self, password):
+        self.password_hash = generate_password_hash(password)
 
     def verify_password(self, password):
-        return pwd_context.verify(password, self.password_hash)
+        return check_password_hash(self.password_hash, password)
 
     def generate_auth_token(self, expiration=600):
         s = Serializer(app.config['SECRET_KEY'], expires_in=expiration)
@@ -69,7 +74,7 @@ def new_user():
     if User.query.filter_by(username=username).first() is not None:
         abort(400)    # existing user
     user = User(username=username)
-    user.hash_password(password)
+    user.password = password
     db.session.add(user)
     db.session.commit()
     return (jsonify({'username': user.username}), 201,
@@ -98,6 +103,6 @@ def get_resource():
 
 
 if __name__ == '__main__':
-    if not os.path.exists('db.sqlite'):
-        db.create_all()
-    app.run(debug=True)
+    os.path.exists('db.sqlite') and os.remove('db.sqlite')
+    db.create_all()
+    app.run(host='0.0.0.0', port=8080, debug=True)
